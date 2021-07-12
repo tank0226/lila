@@ -115,10 +115,11 @@ final class TournamentApi(
       tour: Tournament,
       leaderTeams: List[LeaderTeam]
   ) =
-    tour.copy(conditions =
-      data.conditions
+    tour.copy(
+      conditions = data.conditions
         .convert(tour.perfType, leaderTeams.view.map(_.pair).toMap)
-        .copy(teamMember = old.conditions.teamMember) // can't change that
+        .copy(teamMember = old.conditions.teamMember), // can't change that
+      mode = if (tour.position.isDefined) chess.Mode.Casual else tour.mode
     )
 
   def teamBattleUpdate(
@@ -379,7 +380,7 @@ final class TournamentApi(
     }
 
   def withdrawAll(user: User): Funit =
-    tournamentRepo.withdrawableIds(user.id) flatMap {
+    tournamentRepo.withdrawableIds(user.id, reason = "withdrawAll") flatMap {
       _.map {
         withdraw(_, user.id, isPause = false, isStalling = false)
       }.sequenceFu.void
@@ -466,14 +467,14 @@ final class TournamentApi(
     } withdraw(tourId, userId, isPause = false, isStalling = false)
 
   def pausePlaybanned(userId: User.ID) =
-    tournamentRepo.withdrawableIds(userId) flatMap {
+    tournamentRepo.withdrawableIds(userId, reason = "pausePlaybanned") flatMap {
       _.map {
         playerRepo.withdraw(_, userId)
       }.sequenceFu.void
     }
 
   private[tournament] def kickFromTeam(teamId: TeamID, userId: User.ID): Funit =
-    tournamentRepo.withdrawableIds(userId, teamId = teamId.some) flatMap {
+    tournamentRepo.withdrawableIds(userId, teamId = teamId.some, reason = "kickFromTeam") flatMap {
       _.map { tourId =>
         Sequencing(tourId)(tournamentRepo.byId) { tour =>
           val fu =

@@ -9,13 +9,12 @@ import views.html
 import lila.api.Context
 import lila.app._
 import lila.challenge.{ Challenge => ChallengeModel }
-import lila.common.{ HTTPRequest, IpAddress }
+import lila.common.{ Bearer, HTTPRequest, IpAddress, Template }
 import lila.game.{ AnonCookie, Pov }
 import lila.oauth.{ AccessToken, OAuthScope }
 import lila.setup.ApiConfig
 import lila.socket.Socket.SocketVersion
 import lila.user.{ User => UserModel }
-import lila.common.Template
 
 final class Challenge(
     env: Env
@@ -201,24 +200,33 @@ final class Challenge(
   def apiStartClocks(id: String) =
     Action.async { req =>
       import cats.implicits._
+      def doStart(u1: UserModel, u2: UserModel) =
+        env.game.gameRepo game id flatMap {
+          _ ?? { g =>
+            env.round.proxyRepo.upgradeIfPresent(g) dmap some dmap
+              (_.filter(_.hasUserIds(u1.id, u2.id)))
+          }
+        } map {
+          _ ?? { game =>
+            env.round.tellRound(game.id, lila.round.actorApi.round.StartClock)
+            jsonOkResult
+          }
+        }
       val scopes = List(OAuthScope.Challenge.Write)
-      (get("token1", req) map AccessToken.Id, get("token2", req) map AccessToken.Id).mapN {
+      (get("token1", req) map Bearer.apply, get("token2", req) map Bearer.apply).mapN {
         env.oAuth.server.authBoth(scopes)
       } ?? {
         _ flatMap {
-          case Left(e) => handleScopedFail(scopes, e)
-          case Right((u1, u2)) =>
-            env.game.gameRepo game id flatMap {
-              _ ?? { g =>
-                env.round.proxyRepo.upgradeIfPresent(g) dmap some dmap
-                  (_.filter(_.hasUserIds(u1.id, u2.id)))
-              }
-            } map {
-              _ ?? { game =>
-                env.round.tellRound(game.id, lila.round.actorApi.round.StartClock)
-                jsonOkResult
-              }
+          case Left(e) =>
+            env.security.api.oauthScoped(req, List(OAuthScope.Challenge.Write)) flatMap {
+              case Right(OAuthScope.Scoped(admin, _)) if isGranted(_.ApiChallengeAdmin, admin) =>
+                env.user.repo.pair(~get("token1", req), ~get("token2", req)) flatMap {
+                  case Some((u1, u2)) => doStart(u1, u2)
+                  case _              => BadRequest(jsonError("In admin mode, token1 and token2 contain user IDs")).fuccess
+                }
+              case _ => handleScopedFail(scopes, e)
             }
+          case Right((u1, u2)) => doStart(u1, u2)
         }
       }
     }
@@ -291,7 +299,7 @@ final class Challenge(
                         case Some(denied) =>
                           BadRequest(jsonError(lila.challenge.ChallengeDenied.translated(denied))).fuccess
                         case _ =>
-                          (env.challenge.api create challenge) map {
+                          env.challenge.api create challenge map {
                             case true =>
                               JsonOk(
                                 env.challenge.jsonView
@@ -372,8 +380,8 @@ final class Challenge(
       challenge: lila.challenge.Challenge,
       strToken: String
   )(managedBy: lila.user.User, message: Option[Template]) =
-    env.security.api.oauthScoped(
-      lila.oauth.AccessToken.Id(strToken),
+    env.oAuth.server.auth(
+      Bearer(strToken),
       List(lila.oauth.OAuthScope.Challenge.Write)
     ) flatMap {
       _.fold(

@@ -85,6 +85,10 @@ export const bind = (ctrl: AnalyseCtrl) => {
     };
     keyToMousedown('d', '.study__buttons .comments');
     keyToMousedown('g', '.study__buttons .glyphs');
+
+    // navigation for next and prev chapters
+    kbd.bind('p', ctrl.study.goToPrevChapter);
+    kbd.bind('n', ctrl.study.goToNextChapter);
   }
 };
 

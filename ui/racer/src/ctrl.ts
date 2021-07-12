@@ -1,6 +1,5 @@
 import config from './config';
 import CurrentPuzzle from 'puz/current';
-import makePromotion from 'puz/promotion';
 import throttle from 'common/throttle';
 import { Api as CgApi } from 'chessground/api';
 import { Boost } from './boost';
@@ -10,11 +9,12 @@ import { Countdown } from './countdown';
 import { getNow, puzzlePov, sound } from 'puz/util';
 import { makeCgOpts } from 'puz/run';
 import { parseUci } from 'chessops/util';
-import { Promotion, Run } from 'puz/interfaces';
+import { Run } from 'puz/interfaces';
 import { prop, Prop } from 'common';
 import { RacerOpts, RacerData, RacerVm, RacerPrefs, Race, UpdatableData, RaceStatus, WithGround } from './interfaces';
 import { Role } from 'chessground/types';
 import { storedProp } from 'common/storage';
+import { PromotionCtrl } from 'chess/promotion';
 
 export default class StormCtrl {
   private data: RacerData;
@@ -26,12 +26,13 @@ export default class StormCtrl {
   run: Run;
   vm: RacerVm;
   trans: Trans;
-  promotion: Promotion;
+  promotion: PromotionCtrl;
   countdown: Countdown;
   boost: Boost = new Boost();
   skipAvailable = true;
   knowsSkip = storedProp('racer.skip', false);
   ground = prop<CgApi | false>(false) as Prop<CgApi | false>;
+  flipped = false;
 
   constructor(opts: RacerOpts, redraw: (data: RacerData) => void) {
     this.data = opts.data;
@@ -55,7 +56,7 @@ export default class StormCtrl {
       alreadyStarted: opts.data.startsIn && opts.data.startsIn <= 0,
     };
     this.countdown = new Countdown(this.run.clock, this.resetGround, () => setTimeout(this.redraw));
-    this.promotion = makePromotion(this.withGround, this.cgOpts, this.redraw);
+    this.promotion = new PromotionCtrl(this.withGround, this.resetGround, this.redraw);
     this.serverUpdate(opts.data);
     lichess.socket = new lichess.StrongSocket(`/racer/${this.race.id}`, false, {
       events: {
@@ -68,6 +69,7 @@ export default class StormCtrl {
     });
     lichess.socket.sign(this.sign);
     setInterval(this.redraw, 1000);
+    setTimeout(this.hotkeys, 1000);
     // this.simulate();
   }
 
@@ -93,6 +95,8 @@ export default class StormCtrl {
 
   isRacing = () => this.status() == 'racing';
 
+  isOwner = () => this.data.owner;
+
   myScore = (): number | undefined => {
     const p = this.data.players.find(p => p.name == this.data.player.name);
     return p?.score;
@@ -100,6 +104,10 @@ export default class StormCtrl {
 
   join = throttle(1000, () => {
     if (!this.isPlayer()) this.socketSend('racerJoin');
+  });
+
+  start = throttle(1000, () => {
+    if (this.isOwner()) this.socketSend('racerStart');
   });
 
   countdownSeconds = (): number | undefined =>
@@ -182,7 +190,7 @@ export default class StormCtrl {
 
   private cgOpts = () =>
     this.isPlayer()
-      ? makeCgOpts(this.run, this.isRacing())
+      ? makeCgOpts(this.run, this.isRacing(), this.flipped)
       : {
           orientation: this.run.pov,
         };
@@ -203,5 +211,13 @@ export default class StormCtrl {
     return g && f(g);
   };
 
+  flip = () => {
+    this.flipped = !this.flipped;
+    this.withGround(g => g.toggleOrientation());
+    this.redraw();
+  };
+
   private socketSend = (tpe: string, data?: any) => lichess.socket.send(tpe, data, { sign: this.sign });
+
+  private hotkeys = () => window.Mousetrap.bind('f', this.flip);
 }

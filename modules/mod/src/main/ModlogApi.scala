@@ -6,9 +6,9 @@ import lila.db.dsl._
 import lila.report.{ Mod, ModId, Report, Suspect }
 import lila.security.Permission
 import lila.user.{ Holder, User, UserRepo }
-import lila.irc.SlackApi
+import lila.irc.IrcApi
 
-final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, slackApi: SlackApi)(implicit
+final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, ircApi: IrcApi)(implicit
     ec: scala.concurrent.ExecutionContext
 ) {
 
@@ -253,7 +253,7 @@ final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, slackApi: SlackApi)(
     )
 
   def userHistory(userId: User.ID): Fu[List[Modlog]] =
-    coll.find($doc("user" -> userId)).sort($sort desc "date").cursor[Modlog]().gather[List](30)
+    coll.find($doc("user" -> userId)).sort($sort desc "date").cursor[Modlog]().gather[List](60)
 
   def countRecentCheatDetected(userId: User.ID): Fu[Int] =
     coll.countSel(
@@ -268,7 +268,9 @@ final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, slackApi: SlackApi)(
     lila.mon.mod.log.create.increment()
     lila.log("mod").info(m.toString)
     m.notable ?? {
-      coll.insert.one(m) >> (m.notableSlack ?? slackMonitor(m))
+      coll.insert.one {
+        ModlogBSONHandler.writeTry(m).get ++ (!m.isLichess).??($doc("human" -> true))
+      } >> (m.notableSlack ?? slackMonitor(m))
     }
   }
 
@@ -276,7 +278,7 @@ final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, slackApi: SlackApi)(
     import lila.mod.{ Modlog => M }
     val icon = m.action match {
       case M.alt | M.engine | M.booster | M.troll | M.closeAccount          => "thorhammer"
-      case M.unalt | M.unengine | M.unbooster | M.untroll | M.reopenAccount => "large_blue_circle"
+      case M.unalt | M.unengine | M.unbooster | M.untroll | M.reopenAccount => "blue_circle"
       case M.deletePost | M.deleteTeam | M.terminateTournament              => "x"
       case M.chatTimeout                                                    => "hourglass_flowing_sand"
       case M.closeTopic | M.disableTeam                                     => "lock"
@@ -290,15 +292,15 @@ final class ModlogApi(repo: ModlogRepo, userRepo: UserRepo, slackApi: SlackApi)(
         val monitorType = m.action match {
           case M.engine | M.unengine | M.booster | M.unbooster | M.closeAccount | M.reopenAccount | M.alt |
               M.unalt =>
-            SlackApi.MonitorType.Hunt
+            IrcApi.ModDomain.Hunt
           case M.troll | M.untroll | M.chatTimeout | M.closeTopic | M.openTopic | M.disableTeam |
-              M.enableTeam | M.setKidMode =>
-            SlackApi.MonitorType.Comm
-          case _ => SlackApi.MonitorType.Other
+              M.enableTeam | M.setKidMode | M.deletePost =>
+            IrcApi.ModDomain.Comm
+          case _ => IrcApi.ModDomain.Other
         }
-        slackApi.monitorMod(m.mod, icon = icon, text = text, monitorType)
+        ircApi.monitorMod(m.mod, icon = icon, text = text, monitorType)
       }
     }
-    slackApi.logMod(m.mod, icon = icon, text = text)
+    ircApi.logMod(m.mod, icon = icon, text = text)
   }
 }

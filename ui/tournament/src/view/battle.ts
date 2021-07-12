@@ -24,7 +24,7 @@ export function joinWithTeamSelector(ctrl: TournamentController) {
         },
         [
           h('span.close', {
-            attrs: { 'data-icon': 'L' },
+            attrs: { 'data-icon': '' },
             hook: bind('click', onClose),
           }),
           h('div.team-picker', [
@@ -37,7 +37,7 @@ export function joinWithTeamSelector(ctrl: TournamentController) {
                     h(
                       'a.button',
                       {
-                        hook: bind('click', () => ctrl.join(undefined, id), ctrl.redraw),
+                        hook: bind('click', () => ctrl.join(id), ctrl.redraw),
                       },
                       tb.teams[id]
                     )

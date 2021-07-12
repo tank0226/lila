@@ -2,6 +2,7 @@ package lila.app
 package templating
 
 import play.api.data._
+import play.api.i18n.Lang
 
 import lila.api.Context
 import lila.app.ui.ScalatagsTemplate._
@@ -25,6 +26,14 @@ trait FormHelper { self: I18nHelper =>
 
   val postForm     = form(method := "post")
   val submitButton = button(tpe := "submit")
+
+  def markdownAvailable(implicit lang: Lang) =
+    trans.markdownAvailable(
+      a(
+        href := "https://guides.github.com/features/mastering-markdown/",
+        targetBlank
+      )("Markdown")
+    )
 
   object form3 {
 
@@ -61,7 +70,7 @@ trait FormHelper { self: I18nHelper =>
         klass: String = "",
         half: Boolean = false,
         help: Option[Frag] = None
-    )(content: Field => Frag)(implicit ctx: Context): Frag =
+    )(content: Field => Frag)(implicit ctx: Context): Tag =
       div(
         cls := List(
           "form-group" -> true,
@@ -165,9 +174,8 @@ trait FormHelper { self: I18nHelper =>
 
     def submit(
         content: Frag,
-        icon: Option[String] = Some("E"),
+        icon: Option[String] = Some(""),
         nameValue: Option[(String, String)] = None,
-        klass: String = "",
         confirm: Option[String] = None
     ): Tag =
       submitButton(
@@ -177,8 +185,7 @@ trait FormHelper { self: I18nHelper =>
         cls := List(
           "submit button" -> true,
           "text"          -> icon.isDefined,
-          "confirm"       -> confirm.nonEmpty,
-          klass           -> klass.nonEmpty
+          "confirm"       -> confirm.nonEmpty
         ),
         title := confirm
       )(content)

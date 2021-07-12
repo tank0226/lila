@@ -25,6 +25,7 @@ trait ScalatagsAttrs {
   val dataBotAttr    = attr("data-bot").empty
   val deferAttr      = attr("defer").empty
   val downloadAttr   = attr("download").empty
+  val viewBoxAttr    = attr("viewBox")
 
   object frame {
     val scrolling       = attr("scrolling")
@@ -54,6 +55,10 @@ trait ScalatagsSnippets extends Cap {
   val goodTag                                = tag("good")
   val badTag                                 = tag("bad")
   val timeTag                                = tag("time")
+  val dialog                                 = tag("dialog")
+  val svgTag                                 = tag("svg")
+  val svgGroupTag                            = tag("g")
+  val svgTextTag                             = tag("text")
 
   def userTitleTag(t: Title) =
     span(
@@ -121,7 +126,8 @@ trait ScalatagsExtensions {
       t.setAttr(a.name, scalatags.text.Builder.GenericAttrValueSource(v.value))
   }
 
-  implicit val charAttr = genericAttr[Char]
+  implicit val charAttr       = genericAttr[Char]
+  implicit val bigDecimalAttr = genericAttr[BigDecimal]
 
   implicit val optionStringAttr = new AttrValue[Option[String]] {
     def apply(t: scalatags.text.Builder, a: Attr, v: Option[String]): Unit = {
@@ -144,7 +150,7 @@ trait ScalatagsExtensions {
 
   val targetBlank: Modifier = (t: Builder) => {
     // Prevent tab nabbing when opening untrusted links. Apply also to trusted
-    // links, because there can be a small peformance advantage and lila does
+    // links, because there can be a small performance advantage and lila does
     // not use window.opener anywhere. Will not be overwritten by additional
     // rels.
     t.setAttr("rel", Builder.GenericAttrValueSource("noopener"))
